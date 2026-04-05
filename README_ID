@@ -1,0 +1,149 @@
+🔐 Network Simulation & Security Lab
+Cisco Packet Tracer | VLAN Segmentation | Inter-VLAN Routing | ACL | DHCP | OSPF | ASA Firewall
+---
+📋 Gambaran Proyek
+Proyek ini mensimulasikan lingkungan jaringan perusahaan skala kecil hingga menengah yang dibangun sepenuhnya menggunakan Cisco Packet Tracer. Topologi yang dirancang mereplikasi arsitektur jaringan korporat nyata, mengimplementasikan keamanan berlapis melalui segmentasi jaringan, kebijakan kontrol akses, dan penempatan firewall di perimeter jaringan.
+Tujuan utama proyek ini adalah mendemonstrasikan kompetensi praktis dalam desain jaringan, konfigurasi perangkat, dan penerapan kebijakan keamanan — keterampilan yang langsung relevan untuk posisi Network Engineer dan IT Infrastructure.
+---
+🗺️ Topologi Jaringan
+```
+                    [ ASA 5505 Firewall ]
+                            |
+                    [ Cisco 2911 Router ]
+                     (Inter-VLAN Routing)
+                            |
+                    [ Cisco 2960 Switch ]
+                   /         |          \
+          VLAN 10        VLAN 20       VLAN 30
+        Perkantoran     Server Farm   Guest/DMZ
+      192.168.10.0/24  192.168.20.0/24  192.168.30.0/24
+```
+---
+🖥️ Inventaris Perangkat
+Perangkat	Model	Fungsi
+Firewall	Cisco ASA 5505	Keamanan perimeter, filtering traffic
+Router	Cisco 2911	Inter-VLAN routing (Router-on-a-Stick)
+Switch	Cisco 2960-24TT	Segmentasi VLAN, trunk uplink
+PC Kantor	PC-PT	End device — VLAN 10
+Server Farm	Server-PT	Server internal — VLAN 20
+PC Guest/DMZ	PC-PT	End device tidak terpercaya — VLAN 30
+---
+📐 Rencana Pengalamatan IP
+VLAN	Nama	Network	Gateway	Rentang DHCP
+VLAN 10	Perkantoran	192.168.10.0/24	192.168.10.1	192.168.10.2 – .254
+VLAN 20	Server Farm	192.168.20.0/24	192.168.20.1	Statis (192.168.20.2)
+VLAN 30	Guest/DMZ	192.168.30.0/24	192.168.30.1	192.168.30.2 – .254
+—	ASA ↔ Router	10.0.0.0/30	—	Statis
+---
+⚙️ Fitur yang Dikonfigurasi
+1. Segmentasi VLAN
+Traffic jaringan diisolasi ke dalam tiga segmen logis berdasarkan klasifikasi pengguna dan perangkat. Setiap VLAN beroperasi sebagai broadcast domain independen, sehingga mengurangi attack surface dan meningkatkan manajemen traffic.
+```
+Switch(config)# vlan 10
+Switch(config-vlan)# name Kantor
+Switch(config)# interface FastEthernet0/1
+Switch(config-if)# switchport mode access
+Switch(config-if)# switchport access vlan 10
+```
+2. Inter-VLAN Routing (Router-on-a-Stick)
+Satu uplink fisik dari switch ke router dikonfigurasi sebagai trunk port, membawa traffic dari semua VLAN. Router menggunakan sub-interface dengan enkapsulasi IEEE 802.1Q untuk merutekan traffic antar VLAN.
+```
+Router(config)# interface GigabitEthernet0/1.10
+Router(config-subif)# encapsulation dot1Q 10
+Router(config-subif)# ip address 192.168.10.1 255.255.255.0
+```
+3. DHCP Server (per VLAN)
+Router berfungsi sebagai DHCP server, menyediakan pemberian IP otomatis untuk setiap segmen VLAN. Alamat gateway dikecualikan dari pool DHCP untuk mencegah konflik alamat.
+```
+Router(config)# ip dhcp pool VLAN10
+Router(dhcp-config)# network 192.168.10.0 255.255.255.0
+Router(dhcp-config)# default-router 192.168.10.1
+Router(dhcp-config)# dns-server 8.8.8.8
+Router(config)# ip dhcp excluded-address 192.168.10.1
+```
+4. Access Control List (ACL)
+Extended named ACL diterapkan secara inbound pada sub-interface VLAN 30 untuk menegakkan kebijakan segmentasi jaringan. Traffic dari segmen Guest/DMZ diblokir agar tidak dapat mengakses jaringan internal perkantoran maupun server farm.
+```
+Router(config)# ip access-list extended BLOCK_GUEST
+Router(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.10.0 0.0.0.255
+Router(config-ext-nacl)# deny ip 192.168.30.0 0.0.0.255 192.168.20.0 0.0.0.255
+Router(config-ext-nacl)# permit ip any any
+Router(config)# interface GigabitEthernet0/1.30
+Router(config-subif)# ip access-group BLOCK_GUEST in
+```
+5. OSPF Dynamic Routing
+OSPF (Open Shortest Path First) dikonfigurasi pada router untuk mengiklankan semua jaringan yang terhubung. Hal ini memastikan skalabilitas — ketika router tambahan diintegrasikan ke dalam topologi, pembaruan routing terpropagasi secara otomatis tanpa konfigurasi static route manual.
+```
+Router(config)# router ospf 1
+Router(config-router)# network 10.0.0.0 0.0.0.3 area 0
+Router(config-router)# network 192.168.10.0 0.0.0.255 area 0
+Router(config-router)# network 192.168.20.0 0.0.0.255 area 0
+Router(config-router)# network 192.168.30.0 0.0.0.255 area 0
+```
+6. ASA 5505 Firewall
+Cisco ASA 5505 ditempatkan sebagai firewall perimeter antara jaringan internal dan interface eksternal. Security zone didefinisikan dengan level kepercayaan yang sesuai. Access control list diterapkan per arah interface untuk mengontrol aliran traffic masuk dan keluar.
+```
+ciscoasa(config)# interface vlan 2
+ciscoasa(config-if)# nameif inside
+ciscoasa(config-if)# security-level 100
+ciscoasa(config)# access-list INSIDE_OUT extended permit ip any any
+ciscoasa(config)# access-group INSIDE_OUT in interface inside
+```
+---
+🔒 Matriks Kebijakan Keamanan
+Sumber	Tujuan	Kebijakan	Mekanisme
+VLAN 10 (Kantor)	VLAN 20 (Server)	✅ Diizinkan	Default routing
+VLAN 10 (Kantor)	VLAN 30 (Guest)	✅ Diizinkan	Default routing
+VLAN 30 (Guest)	VLAN 10 (Kantor)	❌ Diblokir	ACL BLOCK_GUEST
+VLAN 30 (Guest)	VLAN 20 (Server)	❌ Diblokir	ACL BLOCK_GUEST
+Any	Any (outbound)	✅ Diizinkan	ASA INSIDE_OUT
+---
+✅ Verifikasi & Hasil Pengujian
+show vlan brief (Switch)
+VLAN 10 → Fa0/1 (PC Kantor) ✅
+VLAN 20 → Fa0/2 (Server Farm) ✅
+VLAN 30 → Fa0/3 (PC Guest/DMZ) ✅
+show ip interface brief (Router)
+Gi0/0 → 10.0.0.2 — up/up ✅
+Gi0/1.10 → 192.168.10.1 — up/up ✅
+Gi0/1.20 → 192.168.20.1 — up/up ✅
+Gi0/1.30 → 192.168.30.1 — up/up ✅
+Ping Test — PC Kantor (VLAN 10)
+```
+ping 192.168.10.1 → Reply (0% loss) ✅
+ping 192.168.20.1 → Reply (0% loss) ✅
+ping 192.168.30.1 → Reply (0% loss) ✅
+```
+Ping Test — PC Guest/DMZ (VLAN 30) — Verifikasi ACL
+```
+ping 192.168.10.2 → Destination host unreachable (100% loss) ✅
+ping 192.168.20.2 → Destination host unreachable (100% loss) ✅
+```
+---
+📁 Struktur Repository
+```
+network-security-lab/
+├── Project Portfolio.pkt       # File topologi Cisco Packet Tracer
+├── README.md                   # Dokumentasi proyek
+└── screenshots/
+    ├── topology.png            # Diagram topologi jaringan
+    ├── switch-vlan-brief.png   # Verifikasi segmentasi VLAN
+    ├── router-ip-brief.png     # Verifikasi status interface
+    ├── router-ip-route.png     # Tabel routing
+    ├── asa-access-list.png     # Konfigurasi ACL firewall
+    ├── ping-kantor.png         # Uji konektivitas dari VLAN 10
+    └── ping-guest-blocked.png  # Verifikasi penerapan ACL
+```
+---
+🧠 Pelajaran yang Didapat
+Arsitektur ASA 5505 berbeda dari router standar — penetapan IP terikat pada interface VLAN, bukan port fisik, sehingga diperlukan pemetaan switchport ke VLAN sebelum konfigurasi interface dapat dilakukan.
+Penempatan ACL sangat menentukan — ACL inbound pada sub-interface VLAN sumber lebih efisien dibandingkan ACL outbound pada tujuan, karena traffic difilter sebelum masuk ke proses routing.
+Router-on-a-Stick merupakan solusi inter-VLAN routing yang efisien dari segi biaya untuk lingkungan skala kecil hingga menengah, meskipun trunk uplink tunggal dapat menjadi titik kemacetan saat jaringan berkembang.
+OSPF pada topologi single-router mengiklankan jaringan yang terhubung secara langsung dan mempersiapkan infrastruktur routing untuk skalabilitas horizontal tanpa perlu rekonfigurasi ulang.
+---
+🛠️ Tools yang Digunakan
+Cisco Packet Tracer 8.2.1
+Cisco IOS CLI
+GitHub (version control & dokumentasi)
+---
+Dibangun sebagai bagian dari portofolio network engineering untuk mendemonstrasikan kompetensi praktis dalam desain jaringan enterprise dan implementasi keamanan jaringan.
